@@ -1,0 +1,18 @@
+# Example geophysical grid config — Kirkland Lake area, Ontario
+# Run with: spatial-grid examples/example_grid.yaml -o output
+
+grid_name: KIRKLAND_LAKE_GRID
+crs: EPSG:32617          # UTM Zone 17N (WGS84)
+
+centre_easting: 567000
+centre_northing: 5340000
+
+azimuth_deg: 45          # NE-SW lines (degrees from north, clockwise)
+line_spacing: 100        # metres between lines
+station_spacing: 25      # metres between stations along a line
+
+num_lines: 21            # 21 lines × 100m = 2000m grid width
+num_stations: 41         # 41 stations × 25m = 1000m line length
+
+line_naming: chainage    # sequential | chainage | signed
+station_naming: chainage

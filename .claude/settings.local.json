@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import geopandas, openpyxl, simplekml, gpxpy, click, yaml, matplotlib; print\\('all deps available'\\)\")",
+      "Bash(where python *)",
+      "Bash(py --version)",
+      "Bash(py -c \"import geopandas, openpyxl, simplekml, gpxpy, click, yaml, matplotlib; print\\('all deps available'\\)\")",
+      "Bash(where conda *)",
+      "Read(//c/Users/Drew/anaconda3/**)",
+      "Bash(\"C:/Users/Drew/anaconda3/python.exe\" --version)",
+      "Bash(\"C:/Users/Drew/anaconda3/python.exe\" -c \"import geopandas, openpyxl, simplekml, gpxpy, click, yaml, matplotlib; print\\('all deps available'\\)\")",
+      "Bash(\"C:/Users/Drew/anaconda3/envs/sask-craton/python.exe\" -c \"import geopandas, openpyxl, simplekml, gpxpy, click, yaml, matplotlib, pyproj, shapely; print\\('all deps available'\\)\")"
+    ]
+  }
+}
