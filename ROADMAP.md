@@ -58,10 +58,11 @@ The other direction: take what was actually collected, compare to plan.
 
 ## v0.7 — collaboration + automation
 
-- **Streamlit Community Cloud** deploy — shareable URL of the UI for non-technical stakeholders
+- **Public deploy** at `tools.smcg-services.com` — k3s manifest + Cloudflare Tunnel hostname (see [DEPLOY.md](DEPLOY.md)) — *in progress*
 - **Multi-grid plans** — define several grids in one config (regional + infill + drill collars) and export as a bundle
 - **Versioned plans** — `spatial-grid diff plan_v1.yaml plan_v2.yaml` shows what changed between iterations
 - **GitHub Action** — run `spatial-grid` on PRs that touch a `*.grid.yaml`, post the preview map as a PR comment
+- **Tools landing page** — `tools.smcg-services.com` becomes a directory of small geo tools as the family grows
 
 ---
 

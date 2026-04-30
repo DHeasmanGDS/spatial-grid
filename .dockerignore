@@ -1,0 +1,33 @@
+# Keep the build context small + reproducible.
+.git
+.github
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.tox
+htmlcov
+.coverage
+build
+dist
+*.egg-info
+
+# Editor / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Project-specific
+output
+tests
+examples/sample_outputs
+.claude
+ROADMAP.md
+DEPLOY.md

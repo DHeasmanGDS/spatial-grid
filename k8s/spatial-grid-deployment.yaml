@@ -1,0 +1,66 @@
+# spatial-grid Streamlit UI — k3s Deployment + NodePort Service.
+#
+# Deploy pattern (matches geo_nlp_portal):
+#   1. Build the image locally on the NUC.
+#   2. `docker save spatial-grid:latest | sudo k3s ctr images import -`
+#   3. `kubectl apply -f k8s/spatial-grid-deployment.yaml`
+#   4. `kubectl rollout restart deployment spatial-grid-deployment` after rebuilds
+#      (image tag stays `:latest`, so apply is a no-op once the manifest exists).
+#   5. In Cloudflare dashboard → Zero Trust → Networks → Tunnels → <tunnel> →
+#      Public Hostname: add `tools.smcg-services.com` → `http://localhost:30090`.
+#
+# This is a stateless Streamlit app — no DB, no secrets, no persistent volume.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spatial-grid-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spatial-grid
+  template:
+    metadata:
+      labels:
+        app: spatial-grid
+        component: web
+    spec:
+      containers:
+        - name: spatial-grid
+          image: spatial-grid:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8501
+
+          # Streamlit is moderately memory-hungry (folium maps + pandas in
+          # the session). Bump if a busy session OOMs.
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "384Mi"
+            limits:
+              cpu: "1000m"
+              memory: "768Mi"
+
+          # Probes deliberately omitted — matches the pattern documented in
+          # k8s/geonlp-deployment.yaml. Streamlit's WebSocket health is hard
+          # to probe cheaply and false negatives caused endpoint flapping
+          # last time.
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spatial-grid-service
+spec:
+  type: NodePort
+  selector:
+    app: spatial-grid
+    component: web
+  ports:
+    - port: 8501
+      targetPort: 8501
+      # 30090 — distinct from geonlp (30080). Reserved for spatial-grid.
+      # When you add the next tool, use 30091 / 30092 / etc.
+      nodePort: 30090

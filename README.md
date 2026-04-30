@@ -67,6 +67,10 @@ spatial-grid-ui
 
 A Streamlit app opens in your browser. Configure on the left (lat/lon or UTM, anchor, azimuth, spacings, naming). The map updates live; download any output format from the sidebar.
 
+## Deployment
+
+Streamlit UI is deployable on a k3s cluster behind a Cloudflare Tunnel. See [DEPLOY.md](DEPLOY.md) for the runbook (Dockerfile, k8s manifest, tunnel hostname mapping).
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md).
