@@ -4,11 +4,14 @@
 grid_name: KIRKLAND_LAKE_GRID
 crs: EPSG:32617          # UTM Zone 17N (WGS84)
 
+# Reference point. With anchor=center this is the midpoint of the grid.
+# With anchor=sw|se|nw|ne it's the named corner.
 centre_easting: 567000
 centre_northing: 5340000
+anchor: center           # center | sw | se | nw | ne
 
 azimuth_deg: 45          # NE-SW lines (degrees from north, clockwise)
-line_spacing: 100        # metres between lines
+line_spacing: 100        # metres between lines (perpendicular to lines)
 station_spacing: 25      # metres between stations along a line
 
 num_lines: 21            # 21 lines × 100m = 2000m grid width

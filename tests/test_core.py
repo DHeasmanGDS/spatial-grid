@@ -76,3 +76,44 @@ def test_chainage_naming():
     assert line_ids == ["L+100", "L-100", "L0"]
     centre_line_stations = grid.stations[grid.stations.line_id == "L0"].station_name.tolist()
     assert "0+00" in centre_line_stations
+
+
+def test_invalid_anchor_rejected():
+    with pytest.raises(ValueError):
+        _spec(anchor="northwest")
+
+
+def test_anchor_sw_extends_ne():
+    """SW anchor: grid extends north and east from the reference point."""
+    grid = generate_grid(_spec(centre_easting=0, centre_northing=0,
+                               azimuth_deg=0, num_lines=3, num_stations=3,
+                               line_spacing=100, station_spacing=100,
+                               anchor="sw"))
+    # Reference point should be the minimum easting and minimum northing
+    assert grid.stations.easting.min() == pytest.approx(0)
+    assert grid.stations.northing.min() == pytest.approx(0)
+    assert grid.stations.easting.max() == pytest.approx(200)
+    assert grid.stations.northing.max() == pytest.approx(200)
+
+
+def test_anchor_nw_extends_se():
+    """NW anchor: grid extends south and east from the reference point."""
+    grid = generate_grid(_spec(centre_easting=0, centre_northing=0,
+                               azimuth_deg=0, num_lines=3, num_stations=3,
+                               line_spacing=100, station_spacing=100,
+                               anchor="nw"))
+    assert grid.stations.easting.min() == pytest.approx(0)
+    assert grid.stations.northing.max() == pytest.approx(0)
+    assert grid.stations.easting.max() == pytest.approx(200)
+    assert grid.stations.northing.min() == pytest.approx(-200)
+
+
+def test_anchor_corner_uses_unsigned_chainage():
+    """Corner-anchored grids drop the +/- prefix on chainage labels."""
+    grid = generate_grid(_spec(num_lines=3, num_stations=3,
+                               line_spacing=100, station_spacing=100,
+                               anchor="sw"))
+    line_ids = set(grid.lines.line_id.tolist())
+    assert line_ids == {"L0", "L100", "L200"}
+    station_names = set(grid.stations.station_name.tolist())
+    assert station_names == {"0+00", "1+00", "2+00"}

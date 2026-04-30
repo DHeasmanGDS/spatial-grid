@@ -16,6 +16,7 @@ def write_preview(grid: Grid, path: str | Path) -> Path:
     grid.lines.plot(ax=ax, color="red", linewidth=0.8, alpha=0.7)
     grid.stations.plot(ax=ax, color="black", markersize=4)
 
+    anchor_label = "Centre" if grid.spec.anchor == "center" else f"Anchor ({grid.spec.anchor.upper()})"
     ax.plot(
         grid.spec.centre_easting,
         grid.spec.centre_northing,
@@ -24,7 +25,7 @@ def write_preview(grid: Grid, path: str | Path) -> Path:
         color="gold",
         markeredgecolor="black",
         zorder=5,
-        label="Centre",
+        label=anchor_label,
     )
 
     ax.set_aspect("equal")

@@ -32,8 +32,9 @@ def write_excel(grid: Grid, path: str | Path) -> Path:
     params = [
         ("Grid name", spec.grid_name),
         ("CRS", spec.crs),
-        ("Centre easting", spec.centre_easting),
-        ("Centre northing", spec.centre_northing),
+        ("Anchor", spec.anchor),
+        ("Reference easting", spec.centre_easting),
+        ("Reference northing", spec.centre_northing),
         ("Azimuth (deg)", spec.azimuth_deg),
         ("Line spacing (m)", spec.line_spacing),
         ("Station spacing (m)", spec.station_spacing),

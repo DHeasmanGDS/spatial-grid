@@ -12,6 +12,9 @@ from shapely.geometry import LineString, Point
 from .naming import line_label, station_label
 
 
+VALID_ANCHORS = ("center", "sw", "se", "nw", "ne")
+
+
 @dataclass
 class GridSpec:
     centre_easting: float
@@ -25,6 +28,14 @@ class GridSpec:
     grid_name: str = "GRID"
     line_naming: str = "chainage"
     station_naming: str = "chainage"
+    anchor: str = "center"
+    """Where (centre_easting, centre_northing) sits relative to the grid.
+
+    'center'  - midpoint of the grid (default)
+    'sw','se','nw','ne' - the named corner of the grid in the *unrotated* frame
+                          (lines run N-S, line spacing runs E-W). Survey extends
+                          NE / NW / SE / SW from the anchor accordingly.
+    """
 
     def __post_init__(self):
         if self.num_lines < 1:
@@ -33,6 +44,8 @@ class GridSpec:
             raise ValueError("num_stations must be >= 2")
         if self.line_spacing <= 0 or self.station_spacing <= 0:
             raise ValueError("spacings must be positive")
+        if self.anchor not in VALID_ANCHORS:
+            raise ValueError(f"anchor must be one of {VALID_ANCHORS}; got {self.anchor!r}")
         CRS.from_user_input(self.crs)
 
 
@@ -52,33 +65,47 @@ class Grid:
 
 
 def generate_grid(spec: GridSpec) -> Grid:
-    """Generate a rectangular grid centred on (centre_easting, centre_northing).
+    """Generate a rectangular grid anchored at (centre_easting, centre_northing).
 
-    Azimuth is measured clockwise from north and gives the direction lines run.
-    Line spacing is perpendicular to that direction.
+    The anchor point is the grid centre when spec.anchor == 'center', or the
+    named corner (in the unrotated frame) for sw/se/nw/ne. Azimuth is measured
+    clockwise from north and gives the direction lines run; line spacing is
+    perpendicular to that.
     """
     az_rad = math.radians(spec.azimuth_deg)
     along = np.array([math.sin(az_rad), math.cos(az_rad)])
     perp = np.array([math.cos(az_rad), -math.sin(az_rad)])
 
-    centre = np.array([spec.centre_easting, spec.centre_northing])
+    anchor_pt = np.array([spec.centre_easting, spec.centre_northing])
 
-    line_indices = np.arange(spec.num_lines) - (spec.num_lines - 1) / 2
-    station_indices = np.arange(spec.num_stations) - (spec.num_stations - 1) / 2
+    n_l, n_s = spec.num_lines, spec.num_stations
+    if spec.anchor == "center":
+        line_indices = np.arange(n_l) - (n_l - 1) / 2
+        station_indices = np.arange(n_s) - (n_s - 1) / 2
+    else:
+        # Anchor at a corner: one or both index ranges are non-negative.
+        # 'sw' / 'nw' anchors are on the WEST side -> grid extends east  (line idx >= 0)
+        # 'sw' / 'se' anchors are on the SOUTH side -> grid extends north (station idx >= 0)
+        cross_sign = 1 if spec.anchor in ("sw", "nw") else -1
+        along_sign = 1 if spec.anchor in ("sw", "se") else -1
+        line_indices = cross_sign * np.arange(n_l)
+        station_indices = along_sign * np.arange(n_s)
+
+    is_centre = spec.anchor == "center"
 
     station_records = []
     line_records = []
 
     for li, l_idx in enumerate(line_indices):
         l_offset = float(l_idx * spec.line_spacing)
-        line_origin = centre + perp * l_offset
-        line_id = line_label(l_offset, spec.line_naming, li)
+        line_origin = anchor_pt + perp * l_offset
+        line_id = line_label(l_offset, spec.line_naming, li, signed=is_centre)
 
         line_pts = []
         for si, s_idx in enumerate(station_indices):
             s_offset = float(s_idx * spec.station_spacing)
             pos = line_origin + along * s_offset
-            station_name = station_label(s_offset, spec.station_naming, si)
+            station_name = station_label(s_offset, spec.station_naming, si, signed=is_centre)
             station_id = f"{line_id}_{station_name}"
 
             station_records.append({

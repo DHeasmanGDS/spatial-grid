@@ -8,6 +8,7 @@ import click
 from .config import load_config
 from .core import generate_grid
 from .exporters.excel import write_excel
+from .exporters.folium_map import write_folium
 from .exporters.gpx import write_gpx
 from .exporters.kml import write_kml
 from .exporters.preview import write_preview
@@ -18,8 +19,8 @@ from .exporters.shapefile import write_shapefile
 @click.argument("config", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--output-dir", "-o", default="output",
               type=click.Path(path_type=Path), show_default=True)
-@click.option("--formats", default="excel,shp,kml,gpx,preview", show_default=True,
-              help="Comma-separated outputs: excel, shp, kml, gpx, preview")
+@click.option("--formats", default="excel,shp,kml,gpx,preview,html", show_default=True,
+              help="Comma-separated outputs: excel, shp, kml, gpx, preview, html")
 def main(config: Path, output_dir: Path, formats: str) -> None:
     """Generate a geophysical grid from a YAML config."""
     spec = load_config(config)
@@ -53,6 +54,10 @@ def main(config: Path, output_dir: Path, formats: str) -> None:
     if "preview" in fmts:
         p = output_dir / f"{base}_preview.png"
         write_preview(grid, p)
+        click.echo(f"  wrote {p}")
+    if "html" in fmts:
+        p = output_dir / f"{base}_map.html"
+        write_folium(grid, p)
         click.echo(f"  wrote {p}")
 
 

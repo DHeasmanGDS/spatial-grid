@@ -39,6 +39,9 @@ htmlcov/
 *.swp
 *.swo
 
+# Claude Code per-user settings (keep .claude/settings.json shareable, ignore the local one)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
