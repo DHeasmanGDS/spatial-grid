@@ -1,0 +1,21 @@
+# SMCG-branded Streamlit theme.
+# Colours mirror smcg-services.com (primary navy #002244).
+
+[theme]
+base = "light"
+primaryColor = "#002244"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f4f6f8"
+textColor = "#0f172a"
+font = "sans serif"
+
+[server]
+# Telemetry off — this is a public-facing tool, no need to phone home.
+gatherUsageStats = false
+
+[browser]
+gatherUsageStats = false
+
+[client]
+showSidebarNavigation = false
+toolbarMode = "minimal"
