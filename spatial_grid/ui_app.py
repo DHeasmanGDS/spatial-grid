@@ -125,10 +125,35 @@ def _make_html_bytes(grid) -> bytes:
         return p.read_bytes()
 
 
+_HERO_HTML = """
+<div style="
+    background: linear-gradient(135deg, #002244 0%, #1e3a8a 100%);
+    padding: 1.6rem 1.8rem;
+    border-radius: 8px;
+    margin: 0 0 1.5rem 0;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+        <h1 style="margin:0;color:#ffffff;font-size:1.9rem;font-weight:700;letter-spacing:-0.01em">
+            spatial-grid
+        </h1>
+        <a href="https://www.smcg-services.com" target="_blank"
+           style="color:#cbd5e1;text-decoration:none;font-size:.85rem;opacity:.9">
+            an SMCG tool &rarr;
+        </a>
+    </div>
+    <p style="margin:.4rem 0 0;opacity:.92;font-size:1rem;line-height:1.45">
+        Local geophysical grids and drill-hole plans for lean exploration teams.
+        Configure on the left, preview live, download below.
+    </p>
+</div>
+"""
+
+
 def main() -> None:
-    st.set_page_config(page_title="spatial-grid", layout="wide", page_icon=":compass:")
-    st.title("spatial-grid — geophysical grid generator")
-    st.caption("Local survey grids for geophysical and drill-hole planning. Configure on the left, preview live, download below.")
+    st.set_page_config(page_title="spatial-grid — SMCG", layout="wide", page_icon=":compass:")
+    st.markdown(_HERO_HTML, unsafe_allow_html=True)
 
     try:
         spec = _sidebar_inputs()
@@ -155,20 +180,38 @@ def main() -> None:
 
     with dl_col:
         st.subheader("Downloads")
-        st.download_button("Excel (.xlsx)", _make_excel_bytes(grid),
-                           file_name=f"{base}.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.download_button("Shapefile bundle (.zip)", _make_shp_zip_bytes(grid, base),
-                           file_name=f"{base}_shp.zip", mime="application/zip")
-        st.download_button("KML (Google Earth)", _make_kml_bytes(grid),
-                           file_name=f"{base}.kml",
-                           mime="application/vnd.google-earth.kml+xml")
-        st.download_button("GPX (handheld GPS)", _make_gpx_bytes(grid),
-                           file_name=f"{base}.gpx", mime="application/gpx+xml")
-        st.download_button("Static map (.png)", _make_png_bytes(grid),
-                           file_name=f"{base}_preview.png", mime="image/png")
-        st.download_button("Interactive map (.html)", _make_html_bytes(grid),
-                           file_name=f"{base}_map.html", mime="text/html")
+        st.download_button(
+            "Excel (.xlsx)", _make_excel_bytes(grid),
+            file_name=f"{base}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary", use_container_width=True,
+        )
+        st.download_button(
+            "Shapefile bundle (.zip)", _make_shp_zip_bytes(grid, base),
+            file_name=f"{base}_shp.zip", mime="application/zip",
+            type="primary", use_container_width=True,
+        )
+        st.download_button(
+            "KML (Google Earth)", _make_kml_bytes(grid),
+            file_name=f"{base}.kml",
+            mime="application/vnd.google-earth.kml+xml",
+            type="primary", use_container_width=True,
+        )
+        st.download_button(
+            "GPX (handheld GPS)", _make_gpx_bytes(grid),
+            file_name=f"{base}.gpx", mime="application/gpx+xml",
+            type="primary", use_container_width=True,
+        )
+        st.download_button(
+            "Static map (.png)", _make_png_bytes(grid),
+            file_name=f"{base}_preview.png", mime="image/png",
+            type="primary", use_container_width=True,
+        )
+        st.download_button(
+            "Interactive map (.html)", _make_html_bytes(grid),
+            file_name=f"{base}_map.html", mime="text/html",
+            type="primary", use_container_width=True,
+        )
 
     # Tables
     st.subheader("Stations")
