@@ -53,10 +53,47 @@ station_naming: chainage
 ## CLI
 
 ```bash
+# Survey grid generator
 spatial-grid CONFIG [-o OUTPUT_DIR] [--formats excel,shp,kml,gpx,preview,html]
+
+# Drill program generator (v0.2)
+spatial-grid-drill CONFIG [-o OUTPUT_DIR] [--formats excel,shp,csv]
 ```
 
 Skip formats you don't need: `--formats excel,shp` is fine.
+
+## Drill program (v0.2)
+
+Plan a list of holes — collar position, azimuth, dip, length — and get back collars, 3D drill traces, downhole survey points, and a metres + cost summary.
+
+```yaml
+name: KIRKLAND_LAKE_INFILL
+crs: EPSG:32617
+survey_interval_m: 10        # downhole survey spacing
+cost_per_metre: 200          # CAD/m, optional
+
+default_azimuth_deg: 270     # inherited by every hole unless overridden
+default_dip_deg: 60          # 0 = horizontal, 90 = vertical down
+default_length_m: 200
+
+holes:
+  - name: KL-001
+    collar_easting: 567050
+    collar_northing: 5340075
+    collar_rl: 320
+  - name: KL-002
+    collar_easting: 567150
+    collar_northing: 5340150
+    collar_rl: 320
+    length_m: 250            # override default
+```
+
+Outputs:
+- **Excel** workbook (Parameters / Summary / Holes / Surveys)
+- **Shapefiles** — `*_collars.shp` (2D points), `*_traces.shp` (**3D** linestrings), `*_surveys.shp` (3D points at every survey interval)
+- **CSV** of all surveys
+
+The 3D trace shapefile loads directly into Leapfrog Geo, Micromine, ArcGIS Pro 3D scenes, etc.
 
 ## Browser UI
 

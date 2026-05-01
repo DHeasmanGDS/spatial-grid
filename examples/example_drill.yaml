@@ -1,0 +1,38 @@
+# Example drill program — Kirkland Lake area, NE-trending zone
+# Run with: spatial-grid-drill examples/example_drill.yaml -o output
+
+name: KIRKLAND_LAKE_INFILL
+crs: EPSG:32617              # UTM Zone 17N (WGS84)
+
+survey_interval_m: 10
+cost_per_metre: 200          # CAD/m, includes mob/demob amortised
+
+# Defaults inherited by every hole unless overridden
+default_azimuth_deg: 270     # west-pointing, perpendicular to NE strike
+default_dip_deg: 60          # 30° from vertical — moderate dip into the structure
+default_length_m: 200
+
+holes:
+  - name: KL-001
+    collar_easting: 567050
+    collar_northing: 5340075
+    collar_rl: 320
+
+  - name: KL-002
+    collar_easting: 567150
+    collar_northing: 5340150
+    collar_rl: 320
+
+  - name: KL-003
+    collar_easting: 567250
+    collar_northing: 5340225
+    collar_rl: 320
+    length_m: 250            # deeper hole on this section
+
+  - name: KL-004                # vertical scout hole
+    collar_easting: 567350
+    collar_northing: 5340300
+    collar_rl: 325
+    azimuth_deg: 0
+    dip_deg: 90
+    length_m: 150

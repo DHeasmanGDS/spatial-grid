@@ -17,12 +17,14 @@ Living list of planned and proposed work. Items are grouped by release; within a
 
 The first release where this becomes useful for actual drill programs, not just survey grids.
 
-- **Drill-hole planning** — for any grid point or arbitrary collar list, generate planned holes from `(easting, northing, azimuth, dip, length)`; output downhole `(E, N, RL)` at toe and at survey intervals; export as 3D LineString shapefile, drill plan CSV, and a per-hole summary
+- ✅ **Drill-hole planning** — explicit collar list with azimuth/dip/length; outputs collars (2D), traces (3D LineStrings), downhole surveys at user-set interval; Excel + shapefile + CSV. New CLI: `spatial-grid-drill`.
+- ✅ **Drill metres + cost estimate** — `cost_per_metre` in the config produces a total program cost on the Summary sheet.
 - **Auto section lines** — given a strike orientation (or interpreted from a target polygon), generate cross-section lines through priority targets, perpendicular to strike, with configurable spacing and length
 - **Tenement / permit clipping** — read a polygon (shp / GeoJSON / KML), clip the grid to inside; report the count of stations dropped
 - **Exclusion-zone buffers** — buffer features (creeks, roads, heritage) and drop stations within the buffer; report which lines are partially affected
 - **Auto UTM zone** — when input is lat/lon, auto-pick the WGS84 UTM EPSG (already wired in the UI; promote to CLI / config)
-- **Drill metres + cost estimate** — total planned metres × user `$/m`, with per-hole breakdown
+- **UI integration** — drill planning section in the Streamlit app: paste collar CSV or use grid stations as collars, live 3D preview, downloads
+- **Auto-from-grid** — turn every Nth grid station into a planned hole with shared azimuth/dip/length
 
 ## v0.3 — terrain awareness + alternative survey geometries
 

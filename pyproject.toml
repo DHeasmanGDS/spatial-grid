@@ -42,6 +42,7 @@ ui = ["streamlit>=1.30", "streamlit-folium>=0.18"]
 
 [project.scripts]
 spatial-grid = "spatial_grid.cli:main"
+spatial-grid-drill = "spatial_grid.cli_drill:main"
 spatial-grid-ui = "spatial_grid.ui_launcher:main"
 
 [project.urls]
