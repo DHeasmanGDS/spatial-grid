@@ -13,6 +13,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY spatial_grid ./spatial_grid
+COPY .streamlit ./.streamlit
 
 # Install the package + UI extras. -e isn't needed in a container.
 RUN pip install --upgrade pip && pip install ".[ui]"
