@@ -23,10 +23,19 @@ EXPOSE 8501
 # Streamlit + Cloudflare Tunnel need CORS/XSRF off because the tunnel
 # rewrites the Host header (the WebSocket handshake fails XSRF otherwise).
 # Headless silences the "open browser" prompt.
+#
+# Theme passed as CLI flags rather than .streamlit/config.toml because
+# Streamlit's per-project config file resolution is inconsistent in
+# containers — flags always override and always win.
 CMD ["streamlit", "run", "spatial_grid/ui_app.py", \
      "--server.address=0.0.0.0", \
      "--server.port=8501", \
      "--server.headless=true", \
      "--server.enableCORS=false", \
      "--server.enableXsrfProtection=false", \
-     "--browser.gatherUsageStats=false"]
+     "--browser.gatherUsageStats=false", \
+     "--theme.base=light", \
+     "--theme.primaryColor=#002244", \
+     "--theme.backgroundColor=#ffffff", \
+     "--theme.secondaryBackgroundColor=#f4f6f8", \
+     "--theme.textColor=#0f172a"]
