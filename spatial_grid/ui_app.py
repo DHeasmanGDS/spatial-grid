@@ -25,7 +25,7 @@ from spatial_grid.exporters.drill_export import (
     write_drill_excel,
     write_drill_shapefiles,
 )
-from spatial_grid.exporters.drill_folium import render_drill_folium
+from spatial_grid.exporters.drill_folium import render_combined_map, render_drill_folium
 from spatial_grid.exporters.excel import write_excel
 from spatial_grid.exporters.folium_map import render_folium, write_folium
 from spatial_grid.exporters.gpx import write_gpx
@@ -278,12 +278,8 @@ def _grid_main() -> None:
 # ---------------------------------------------------------------------------
 
 def _default_holes_df() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"name": "H-001", "easting": 567050.0, "northing": 5340075.0, "rl": 320.0,
-         "azimuth_deg": None, "dip_deg": None, "length_m": None},
-        {"name": "H-002", "easting": 567150.0, "northing": 5340150.0, "rl": 320.0,
-         "azimuth_deg": None, "dip_deg": None, "length_m": None},
-    ], columns=HOLE_COLS)
+    """Empty holes DataFrame — users add via click-to-add, CSV, or manual edit."""
+    return pd.DataFrame(columns=HOLE_COLS)
 
 
 def _drill_sidebar_inputs() -> dict:
@@ -313,6 +309,24 @@ def _drill_sidebar_inputs() -> dict:
         "Default length (m)", min_value=1.0, value=200.0, step=10.0,
     )
 
+    st.sidebar.subheader("Hole naming (click-to-add)")
+    name_prefix = st.sidebar.text_input(
+        "Prefix", value="HOLE_",
+        help="Prefix for click-added holes — e.g. ANG_DD_ → ANG_DD_014, ANG_DD_015, ...",
+    )
+    start_number = int(st.sidebar.number_input(
+        "Starting number", value=1, min_value=0, step=1,
+        help="First number used. The next click picks the next free number with this prefix.",
+    ))
+    pad_width = int(st.sidebar.number_input(
+        "Zero-pad width", value=3, min_value=0, max_value=8, step=1,
+        help="0 = no padding (HOLE_1). 3 = HOLE_001.",
+    ))
+    snap_threshold_m = st.sidebar.number_input(
+        "Snap to station within (m)", value=50.0, min_value=0.0, step=10.0,
+        help="When clicking near a grid station, snap to that station's coordinates. Set to 0 to disable.",
+    )
+
     return {
         "name": name,
         "crs": crs,
@@ -321,7 +335,74 @@ def _drill_sidebar_inputs() -> dict:
         "default_azimuth_deg": float(default_azimuth_deg),
         "default_dip_deg": float(default_dip_deg),
         "default_length_m": float(default_length_m),
+        "name_prefix": name_prefix,
+        "start_number": start_number,
+        "pad_width": pad_width,
+        "snap_threshold_m": float(snap_threshold_m),
     }
+
+
+def _next_hole_name(prefix: str, start: int, pad: int, current_df: pd.DataFrame) -> str:
+    """Pick the next free hole name with this prefix, starting from `start`."""
+    used: set[int] = set()
+    if current_df is not None and "name" in current_df.columns:
+        for raw in current_df["name"].dropna():
+            s = str(raw)
+            if s.startswith(prefix):
+                tail = s[len(prefix):]
+                try:
+                    used.add(int(tail))
+                except ValueError:
+                    continue
+    n = max(start, 0)
+    while n in used:
+        n += 1
+    return f"{prefix}{n:0{pad}d}" if pad > 0 else f"{prefix}{n}"
+
+
+def _add_hole_from_click(click_latlng: dict, defaults: dict) -> tuple[pd.DataFrame, str | None]:
+    """Convert a map click (lat/lng) into a new hole row.
+
+    Snaps to the nearest grid station if (a) a grid is in session_state,
+    (b) it shares the drill CRS, and (c) the click is within snap_threshold_m.
+    Returns (new_row_df, snapped_station_id_or_None).
+    """
+    drill_crs = defaults["crs"]
+    t = Transformer.from_crs("EPSG:4326", drill_crs, always_xy=True)
+    click_e, click_n = t.transform(click_latlng["lng"], click_latlng["lat"])
+
+    snapped_id = None
+    last_grid = st.session_state.get("last_grid")
+    snap_m = defaults["snap_threshold_m"]
+    if (
+        last_grid is not None
+        and last_grid["crs"] == drill_crs
+        and snap_m > 0
+    ):
+        stations = last_grid["stations"]
+        dx = stations["easting"] - click_e
+        dy = stations["northing"] - click_n
+        dist = (dx * dx + dy * dy) ** 0.5
+        nearest = dist.idxmin()
+        if dist[nearest] <= snap_m:
+            click_e = float(stations.iloc[nearest]["easting"])
+            click_n = float(stations.iloc[nearest]["northing"])
+            snapped_id = str(stations.iloc[nearest]["station_id"])
+
+    name = _next_hole_name(
+        defaults["name_prefix"], defaults["start_number"],
+        defaults["pad_width"], st.session_state.get("drill_holes_df"),
+    )
+    new_row = pd.DataFrame([{
+        "name": name,
+        "easting": click_e,
+        "northing": click_n,
+        "rl": None,
+        "azimuth_deg": None,
+        "dip_deg": None,
+        "length_m": None,
+    }], columns=HOLE_COLS)
+    return new_row, snapped_id
 
 
 def _coerce_holes_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -394,12 +475,172 @@ def _drill_main() -> None:
     if "drill_editor_v" not in st.session_state:
         st.session_state.drill_editor_v = 0
 
-    with st.expander("Populate from current grid", expanded=False):
-        last_grid = st.session_state.get("last_grid")
+    # Build current plan from whatever's in the editor — for the live map below.
+    plan = None
+    build_error = None
+    try:
+        holes = _build_holes(st.session_state.drill_holes_df, defaults)
+        if holes:
+            program_spec = DrillProgramSpec(
+                name=defaults["name"] or "PROGRAM",
+                crs=defaults["crs"],
+                holes=holes,
+                survey_interval_m=defaults["survey_interval_m"],
+                cost_per_metre=defaults["cost_per_metre"],
+            )
+            plan = generate_drill_plan(program_spec)
+    except ValueError as e:
+        build_error = str(e)
+
+    # ---- Top: combined clickable map ----
+    last_grid = st.session_state.get("last_grid")
+    grid_for_map = (
+        last_grid["stations"]
+        if last_grid and last_grid["crs"] == defaults["crs"]
+        else None
+    )
+
+    st.subheader("Map — click to add a hole")
+    hint_parts = []
+    if grid_for_map is not None:
+        hint_parts.append(f"Grid: **{last_grid['name']}** ({last_grid['num_stations']} stations)")
+    elif last_grid is not None:
+        hint_parts.append(
+            f":warning: Grid CRS ({last_grid['crs']}) ≠ drill CRS ({defaults['crs']}); grid hidden"
+        )
+    if plan is not None:
+        hint_parts.append(f"{plan.hole_count} planned holes")
+    next_name_preview = _next_hole_name(
+        defaults["name_prefix"], defaults["start_number"],
+        defaults["pad_width"], st.session_state.drill_holes_df,
+    )
+    hint_parts.append(f"Next click → **{next_name_preview}**")
+    st.caption(" · ".join(hint_parts))
+
+    m = render_combined_map(defaults["crs"], grid_for_map, plan)
+    map_result = st_folium(
+        m, width=None, height=550,
+        returned_objects=["last_clicked"],
+        key="drill_combined_map",
+    )
+
+    if map_result and map_result.get("last_clicked"):
+        click = map_result["last_clicked"]
+        sig = f"{click['lat']:.6f},{click['lng']:.6f}"
+        if sig != st.session_state.get("drill_last_click_sig"):
+            st.session_state.drill_last_click_sig = sig
+            new_row, snap_id = _add_hole_from_click(click, defaults)
+            current = st.session_state.drill_holes_df
+            st.session_state.drill_holes_df = pd.concat(
+                [current, new_row], ignore_index=True,
+            )
+            st.session_state.drill_editor_v += 1
+            added_name = new_row.iloc[0]["name"]
+            if snap_id:
+                st.toast(f"Added {added_name} (snapped to {snap_id})", icon="📍")
+            else:
+                st.toast(f"Added {added_name} at clicked point", icon="📍")
+            st.rerun()
+
+    if build_error:
+        st.error(f"Holes table error: {build_error}")
+
+    # ---- Metrics ----
+    if plan is not None:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Holes", plan.hole_count)
+        c2.metric("Total metres", f"{plan.total_metres:,.0f}")
+        if plan.total_cost is not None:
+            c3.metric("Estimated cost", f"${plan.total_cost:,.0f}")
+        else:
+            c3.metric("Estimated cost", "—")
+        c4.metric("CRS", defaults["crs"])
+
+    # ---- Holes editor + downloads ----
+    edit_col, dl_col = st.columns([3, 1])
+    with edit_col:
+        st.subheader("Holes")
+        edited = st.data_editor(
+            st.session_state.drill_holes_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key=f"drill_editor_{st.session_state.drill_editor_v}",
+            column_config={
+                "name": st.column_config.TextColumn("Hole name", required=True),
+                "easting": st.column_config.NumberColumn("Easting", format="%.2f", required=True),
+                "northing": st.column_config.NumberColumn("Northing", format="%.2f", required=True),
+                "rl": st.column_config.NumberColumn("RL (collar)", format="%.2f"),
+                "azimuth_deg": st.column_config.NumberColumn(
+                    "Azimuth (°)", format="%.1f", help="Empty → use sidebar default",
+                ),
+                "dip_deg": st.column_config.NumberColumn(
+                    "Dip (°)", format="%.1f",
+                    help="Empty → use sidebar default; 0=horizontal, 90=vertical",
+                ),
+                "length_m": st.column_config.NumberColumn(
+                    "Length (m)", format="%.1f", help="Empty → use sidebar default",
+                ),
+            },
+        )
+        st.session_state.drill_holes_df = edited
+
+        if st.button("Clear all holes", type="secondary", key="drill_clear_btn"):
+            st.session_state.drill_holes_df = pd.DataFrame(columns=HOLE_COLS)
+            st.session_state.drill_editor_v += 1
+            st.session_state.drill_last_click_sig = None
+            st.rerun()
+
+    with dl_col:
+        st.subheader("Downloads")
+        if plan is not None:
+            base = (defaults["name"] or "PROGRAM").replace(" ", "_")
+            st.download_button(
+                "Excel (.xlsx)", _make_drill_excel_bytes(plan),
+                file_name=f"{base}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary", use_container_width=True,
+            )
+            st.download_button(
+                "Shapefile bundle (.zip)", _make_drill_shp_zip_bytes(plan, base),
+                file_name=f"{base}_drill_shp.zip", mime="application/zip",
+                type="primary", use_container_width=True,
+            )
+            st.download_button(
+                "Surveys CSV", _make_drill_csv_bytes(plan),
+                file_name=f"{base}_surveys.csv", mime="text/csv",
+                type="primary", use_container_width=True,
+            )
+        else:
+            st.caption("Add at least one valid hole to enable downloads.")
+
+    # ---- Bulk import options (collapsed, below the table) ----
+    with st.expander("Bulk: import holes from CSV"):
+        st.caption(
+            "Headers (case-insensitive): "
+            "`name, easting, northing, rl, azimuth_deg, dip_deg, length_m`. "
+            "Az / dip / length empty → uses the defaults from the sidebar. "
+            "Replaces the current holes table."
+        )
+        csv_text = st.text_area(
+            "Paste CSV", height=140, key="drill_csv_input",
+            placeholder="name,easting,northing,rl,azimuth_deg,dip_deg,length_m\n"
+                        "KL-001,567050,5340075,320,,,\n...",
+        )
+        if st.button("Apply CSV", type="primary"):
+            try:
+                df = pd.read_csv(io.StringIO(csv_text))
+                df = _coerce_holes_df(df)
+                st.session_state.drill_holes_df = df
+                st.session_state.drill_editor_v += 1
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.error(f"CSV parse error: {e}")
+
+    with st.expander("Bulk: populate from current grid (every Nth station)"):
         if not last_grid:
             st.info(
-                "Generate a grid in **Survey grid** mode first, then return here. "
-                "Each grid station will become one planned hole."
+                "Generate a grid in **Survey grid** mode first. "
+                "For most planning workflows, click-to-add on the map above is the better tool."
             )
         else:
             st.caption(
@@ -409,19 +650,15 @@ def _drill_main() -> None:
             crs_mismatch = last_grid["crs"] != defaults["crs"]
             if crs_mismatch:
                 st.warning(
-                    f"Grid CRS ({last_grid['crs']}) differs from drill CRS "
-                    f"({defaults['crs']}). Update the sidebar CRS to match before populating, "
-                    "otherwise collar coordinates will be in the wrong projection."
+                    f"Grid CRS ({last_grid['crs']}) ≠ drill CRS ({defaults['crs']}). "
+                    "Match the sidebar CRS before populating."
                 )
             step = int(st.number_input(
                 "Step (every Nth station)", min_value=1, value=4, step=1,
-                help="1 = every station, 4 = every 4th station, etc.",
+                help="1 = every station, 4 = every 4th station.",
             ))
             n_holes = -(-last_grid["num_stations"] // step)
-            st.caption(
-                f"→ would create **{n_holes}** holes from "
-                f"{last_grid['num_stations']} stations."
-            )
+            st.caption(f"→ would create **{n_holes}** holes (replaces existing).")
             if st.button(
                 "Populate holes table from grid",
                 type="primary",
@@ -442,110 +679,14 @@ def _drill_main() -> None:
                 st.session_state.drill_editor_v += 1
                 st.rerun()
 
-    with st.expander("Import holes from CSV", expanded=False):
-        st.caption(
-            "Headers (case-insensitive): "
-            "`name, easting, northing, rl, azimuth_deg, dip_deg, length_m`. "
-            "Az / dip / length empty → uses the defaults from the sidebar."
-        )
-        csv_text = st.text_area("Paste CSV", height=140, key="drill_csv_input",
-                                placeholder="name,easting,northing,rl,azimuth_deg,dip_deg,length_m\nKL-001,567050,5340075,320,,,\n...")
-        if st.button("Apply CSV", type="primary"):
-            try:
-                df = pd.read_csv(io.StringIO(csv_text))
-                df = _coerce_holes_df(df)
-                st.session_state.drill_holes_df = df
-                st.session_state.drill_editor_v += 1
-                st.rerun()
-            except Exception as e:  # noqa: BLE001
-                st.error(f"CSV parse error: {e}")
-
-    st.subheader("Holes")
-    edited = st.data_editor(
-        st.session_state.drill_holes_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key=f"drill_editor_{st.session_state.drill_editor_v}",
-        column_config={
-            "name": st.column_config.TextColumn("Hole name", required=True),
-            "easting": st.column_config.NumberColumn("Easting", format="%.2f", required=True),
-            "northing": st.column_config.NumberColumn("Northing", format="%.2f", required=True),
-            "rl": st.column_config.NumberColumn("RL (collar)", format="%.2f"),
-            "azimuth_deg": st.column_config.NumberColumn("Azimuth (°)", format="%.1f",
-                                                          help="Empty → use default"),
-            "dip_deg": st.column_config.NumberColumn("Dip (°)", format="%.1f",
-                                                      help="Empty → use default; 0=horizontal, 90=vertical"),
-            "length_m": st.column_config.NumberColumn("Length (m)", format="%.1f",
-                                                       help="Empty → use default"),
-        },
-    )
-    st.session_state.drill_holes_df = edited
-
-    try:
-        holes = _build_holes(edited, defaults)
-    except ValueError as e:
-        st.error(f"Holes table error: {e}")
-        return
-
-    if not holes:
-        st.info("Add at least one hole to preview the program.")
-        return
-
-    try:
-        program_spec = DrillProgramSpec(
-            name=defaults["name"] or "PROGRAM",
-            crs=defaults["crs"],
-            holes=holes,
-            survey_interval_m=defaults["survey_interval_m"],
-            cost_per_metre=defaults["cost_per_metre"],
-        )
-        plan = generate_drill_plan(program_spec)
-    except ValueError as e:
-        st.error(f"Invalid program: {e}")
-        return
-
-    base = program_spec.name.replace(" ", "_") or "program"
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Holes", plan.hole_count)
-    c2.metric("Total metres", f"{plan.total_metres:,.0f}")
-    if plan.total_cost is not None:
-        c3.metric("Estimated cost", f"${plan.total_cost:,.0f}")
-    else:
-        c3.metric("Estimated cost", "—")
-    c4.metric("CRS", program_spec.crs)
-
-    map_col, dl_col = st.columns([3, 1])
-    with map_col:
-        st.subheader("Map preview")
-        m = render_drill_folium(plan)
-        st_folium(m, width=None, height=550, returned_objects=[])
-
-    with dl_col:
-        st.subheader("Downloads")
-        st.download_button(
-            "Excel (.xlsx)", _make_drill_excel_bytes(plan),
-            file_name=f"{base}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary", use_container_width=True,
-        )
-        st.download_button(
-            "Shapefile bundle (.zip)", _make_drill_shp_zip_bytes(plan, base),
-            file_name=f"{base}_drill_shp.zip", mime="application/zip",
-            type="primary", use_container_width=True,
-        )
-        st.download_button(
-            "Surveys CSV", _make_drill_csv_bytes(plan),
-            file_name=f"{base}_surveys.csv", mime="text/csv",
-            type="primary", use_container_width=True,
-        )
-
-    with st.expander("Holes — computed collar/toe coordinates"):
-        st.dataframe(plan.collars.drop(columns=["geometry"]),
-                     use_container_width=True)
-    with st.expander("Surveys"):
-        st.dataframe(plan.surveys.drop(columns=["geometry"]),
-                     use_container_width=True, height=300)
+    # ---- Computed tables ----
+    if plan is not None:
+        with st.expander("Holes — computed collar/toe coordinates"):
+            st.dataframe(plan.collars.drop(columns=["geometry"]),
+                         use_container_width=True)
+        with st.expander("Surveys"):
+            st.dataframe(plan.surveys.drop(columns=["geometry"]),
+                         use_container_width=True, height=300)
 
 
 # ---------------------------------------------------------------------------
