@@ -19,6 +19,13 @@ from streamlit_folium import st_folium
 
 from spatial_grid.core import VALID_ANCHORS, GridSpec, generate_grid
 from spatial_grid.crs import utm_epsg_for_lonlat
+from spatial_grid.drill import DrillHoleSpec, DrillProgramSpec, generate_drill_plan
+from spatial_grid.exporters.drill_export import (
+    write_drill_csv,
+    write_drill_excel,
+    write_drill_shapefiles,
+)
+from spatial_grid.exporters.drill_folium import render_drill_folium
 from spatial_grid.exporters.excel import write_excel
 from spatial_grid.exporters.folium_map import render_folium, write_folium
 from spatial_grid.exporters.gpx import write_gpx
@@ -27,6 +34,10 @@ from spatial_grid.exporters.preview import write_preview
 from spatial_grid.exporters.shapefile import write_shapefile
 
 NAMING_SCHEMES = ["chainage", "sequential", "signed"]
+MODES = ("Survey grid", "Drill program")
+
+# Columns the drill holes table editor knows about.
+HOLE_COLS = ["name", "easting", "northing", "rl", "azimuth_deg", "dip_deg", "length_m"]
 
 
 def _sidebar_inputs() -> GridSpec:
@@ -183,10 +194,8 @@ _HERO_HTML = """
 """
 
 
-def main() -> None:
-    st.set_page_config(page_title="spatial-grid — SMCG", layout="wide", page_icon=":compass:")
-    st.markdown(_HERO_HTML, unsafe_allow_html=True)
-
+def _grid_main() -> None:
+    """Survey-grid mode: existing behaviour."""
     try:
         spec = _sidebar_inputs()
         grid = generate_grid(spec)
@@ -196,14 +205,12 @@ def main() -> None:
 
     base = spec.grid_name.replace(" ", "_") or "grid"
 
-    # Top metrics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Stations", grid.total_stations)
     c2.metric("Lines", spec.num_lines)
     c3.metric("Line-km", f"{grid.total_line_km:.2f}")
     c4.metric("CRS", spec.crs)
 
-    # Map + downloads
     map_col, dl_col = st.columns([3, 1])
     with map_col:
         st.subheader("Map preview")
@@ -245,7 +252,6 @@ def main() -> None:
             type="primary", use_container_width=True,
         )
 
-    # Tables
     st.subheader("Stations")
     df = pd.DataFrame(grid.stations.drop(columns=["geometry"]))
     st.dataframe(df, use_container_width=True, height=300)
@@ -253,6 +259,253 @@ def main() -> None:
     with st.expander("Lines"):
         ldf = pd.DataFrame(grid.lines.drop(columns=["geometry"]))
         st.dataframe(ldf, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Drill program mode
+# ---------------------------------------------------------------------------
+
+def _default_holes_df() -> pd.DataFrame:
+    return pd.DataFrame([
+        {"name": "H-001", "easting": 567050.0, "northing": 5340075.0, "rl": 320.0,
+         "azimuth_deg": None, "dip_deg": None, "length_m": None},
+        {"name": "H-002", "easting": 567150.0, "northing": 5340150.0, "rl": 320.0,
+         "azimuth_deg": None, "dip_deg": None, "length_m": None},
+    ], columns=HOLE_COLS)
+
+
+def _drill_sidebar_inputs() -> dict:
+    """Render drill defaults to the sidebar; return a dict."""
+    st.sidebar.header("Drill defaults")
+    name = st.sidebar.text_input("Program name", value="MY_PROGRAM")
+    crs = st.sidebar.text_input("CRS", value="EPSG:32617")
+    survey_interval_m = st.sidebar.number_input(
+        "Survey interval (m)", value=10.0, min_value=1.0,
+        help="Spacing between downhole survey points.",
+    )
+    cost_per_metre = st.sidebar.number_input(
+        "Cost per metre (CAD)", value=200.0, min_value=0.0,
+        help="Set to 0 to omit cost from the program summary.",
+    )
+
+    st.sidebar.subheader("Per-hole defaults")
+    st.sidebar.caption("Used for any hole row that leaves the field blank.")
+    default_azimuth_deg = st.sidebar.number_input(
+        "Default azimuth (°)", min_value=0.0, max_value=360.0, value=270.0, step=1.0,
+    )
+    default_dip_deg = st.sidebar.number_input(
+        "Default dip (°)", min_value=0.0, max_value=90.0, value=60.0, step=1.0,
+        help="0 = horizontal, 90 = vertical down.",
+    )
+    default_length_m = st.sidebar.number_input(
+        "Default length (m)", min_value=1.0, value=200.0, step=10.0,
+    )
+
+    return {
+        "name": name,
+        "crs": crs,
+        "survey_interval_m": float(survey_interval_m),
+        "cost_per_metre": float(cost_per_metre) if cost_per_metre > 0 else None,
+        "default_azimuth_deg": float(default_azimuth_deg),
+        "default_dip_deg": float(default_dip_deg),
+        "default_length_m": float(default_length_m),
+    }
+
+
+def _coerce_holes_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Lower-case headers, ensure all expected columns exist."""
+    df = df.copy()
+    df.columns = [c.lower().strip() for c in df.columns]
+    for col in HOLE_COLS:
+        if col not in df.columns:
+            df[col] = None
+    return df[HOLE_COLS]
+
+
+def _build_holes(df: pd.DataFrame, defaults: dict) -> list[DrillHoleSpec]:
+    holes = []
+    for _, row in df.iterrows():
+        name = row.get("name")
+        if name is None or (isinstance(name, float) and pd.isna(name)) or str(name).strip() == "":
+            continue
+        easting = row.get("easting")
+        northing = row.get("northing")
+        if pd.isna(easting) or pd.isna(northing):
+            raise ValueError(f"Hole '{name}' is missing easting or northing")
+
+        def _val(col, fallback):
+            v = row.get(col)
+            return float(v) if v is not None and not pd.isna(v) else float(fallback)
+
+        holes.append(DrillHoleSpec(
+            name=str(name),
+            collar_easting=float(easting),
+            collar_northing=float(northing),
+            collar_rl=_val("rl", 0.0),
+            azimuth_deg=_val("azimuth_deg", defaults["default_azimuth_deg"]),
+            dip_deg=_val("dip_deg", defaults["default_dip_deg"]),
+            length_m=_val("length_m", defaults["default_length_m"]),
+        ))
+    return holes
+
+
+def _make_drill_excel_bytes(plan) -> bytes:
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "drill.xlsx"
+        write_drill_excel(plan, p)
+        return p.read_bytes()
+
+
+def _make_drill_shp_zip_bytes(plan, basename: str) -> bytes:
+    with tempfile.TemporaryDirectory() as td:
+        write_drill_shapefiles(plan, td, basename)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in Path(td).iterdir():
+                zf.write(f, f.name)
+        return buf.getvalue()
+
+
+def _make_drill_csv_bytes(plan) -> bytes:
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "drill.csv"
+        write_drill_csv(plan, p)
+        return p.read_bytes()
+
+
+def _drill_main() -> None:
+    """Drill-program mode: edit holes inline + import CSV + preview + download."""
+    defaults = _drill_sidebar_inputs()
+
+    if "drill_holes_df" not in st.session_state:
+        st.session_state.drill_holes_df = _default_holes_df()
+    if "drill_editor_v" not in st.session_state:
+        st.session_state.drill_editor_v = 0
+
+    with st.expander("Import holes from CSV", expanded=False):
+        st.caption(
+            "Headers (case-insensitive): "
+            "`name, easting, northing, rl, azimuth_deg, dip_deg, length_m`. "
+            "Az / dip / length empty → uses the defaults from the sidebar."
+        )
+        csv_text = st.text_area("Paste CSV", height=140, key="drill_csv_input",
+                                placeholder="name,easting,northing,rl,azimuth_deg,dip_deg,length_m\nKL-001,567050,5340075,320,,,\n...")
+        if st.button("Apply CSV", type="primary"):
+            try:
+                df = pd.read_csv(io.StringIO(csv_text))
+                df = _coerce_holes_df(df)
+                st.session_state.drill_holes_df = df
+                st.session_state.drill_editor_v += 1
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.error(f"CSV parse error: {e}")
+
+    st.subheader("Holes")
+    edited = st.data_editor(
+        st.session_state.drill_holes_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key=f"drill_editor_{st.session_state.drill_editor_v}",
+        column_config={
+            "name": st.column_config.TextColumn("Hole name", required=True),
+            "easting": st.column_config.NumberColumn("Easting", format="%.2f", required=True),
+            "northing": st.column_config.NumberColumn("Northing", format="%.2f", required=True),
+            "rl": st.column_config.NumberColumn("RL (collar)", format="%.2f"),
+            "azimuth_deg": st.column_config.NumberColumn("Azimuth (°)", format="%.1f",
+                                                          help="Empty → use default"),
+            "dip_deg": st.column_config.NumberColumn("Dip (°)", format="%.1f",
+                                                      help="Empty → use default; 0=horizontal, 90=vertical"),
+            "length_m": st.column_config.NumberColumn("Length (m)", format="%.1f",
+                                                       help="Empty → use default"),
+        },
+    )
+    st.session_state.drill_holes_df = edited
+
+    try:
+        holes = _build_holes(edited, defaults)
+    except ValueError as e:
+        st.error(f"Holes table error: {e}")
+        return
+
+    if not holes:
+        st.info("Add at least one hole to preview the program.")
+        return
+
+    try:
+        program_spec = DrillProgramSpec(
+            name=defaults["name"] or "PROGRAM",
+            crs=defaults["crs"],
+            holes=holes,
+            survey_interval_m=defaults["survey_interval_m"],
+            cost_per_metre=defaults["cost_per_metre"],
+        )
+        plan = generate_drill_plan(program_spec)
+    except ValueError as e:
+        st.error(f"Invalid program: {e}")
+        return
+
+    base = program_spec.name.replace(" ", "_") or "program"
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Holes", plan.hole_count)
+    c2.metric("Total metres", f"{plan.total_metres:,.0f}")
+    if plan.total_cost is not None:
+        c3.metric("Estimated cost", f"${plan.total_cost:,.0f}")
+    else:
+        c3.metric("Estimated cost", "—")
+    c4.metric("CRS", program_spec.crs)
+
+    map_col, dl_col = st.columns([3, 1])
+    with map_col:
+        st.subheader("Map preview")
+        m = render_drill_folium(plan)
+        st_folium(m, width=None, height=550, returned_objects=[])
+
+    with dl_col:
+        st.subheader("Downloads")
+        st.download_button(
+            "Excel (.xlsx)", _make_drill_excel_bytes(plan),
+            file_name=f"{base}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary", use_container_width=True,
+        )
+        st.download_button(
+            "Shapefile bundle (.zip)", _make_drill_shp_zip_bytes(plan, base),
+            file_name=f"{base}_drill_shp.zip", mime="application/zip",
+            type="primary", use_container_width=True,
+        )
+        st.download_button(
+            "Surveys CSV", _make_drill_csv_bytes(plan),
+            file_name=f"{base}_surveys.csv", mime="text/csv",
+            type="primary", use_container_width=True,
+        )
+
+    with st.expander("Holes — computed collar/toe coordinates"):
+        st.dataframe(plan.collars.drop(columns=["geometry"]),
+                     use_container_width=True)
+    with st.expander("Surveys"):
+        st.dataframe(plan.surveys.drop(columns=["geometry"]),
+                     use_container_width=True, height=300)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    st.set_page_config(page_title="spatial-grid — SMCG", layout="wide", page_icon=":compass:")
+    st.markdown(_HERO_HTML, unsafe_allow_html=True)
+
+    st.sidebar.markdown("### Mode")
+    mode = st.sidebar.radio(
+        "Mode", MODES, label_visibility="collapsed", horizontal=True, key="mode",
+    )
+    st.sidebar.divider()
+
+    if mode == "Survey grid":
+        _grid_main()
+    else:
+        _drill_main()
 
 
 # Streamlit runs the file top-to-bottom on every interaction

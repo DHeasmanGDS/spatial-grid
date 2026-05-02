@@ -20,9 +20,9 @@ Living list of planned and proposed work. Items are grouped by release; within a
 
 Make this the tool exploration teams actually use to plan a program, not just lay out stations. Items in priority order:
 
-### Drill — UI + ergonomics (next session)
-- **Drill UI integration** — second tab in the Streamlit app: paste / type the hole list, set defaults (azimuth, dip, length, survey interval, $/m), live preview map showing collars + projected traces, download buttons for Excel / shapefiles / CSV
-- **Bulk CSV hole import** — accept `holes.csv` (one row per hole) in addition to YAML; the natural format when a geo has 50+ planned holes
+### Drill — UI + ergonomics
+- ✅ **Drill UI integration** — sidebar mode selector switches between Survey grid and Drill program. Drill mode has defaults panel (program name, CRS, survey interval, cost/m, default azimuth/dip/length), an inline editable holes table, live Folium preview (collars + surface-projected traces), and downloads (Excel, shapefile bundle zip, surveys CSV).
+- ✅ **Bulk CSV hole import** — paste a `name,easting,northing,rl,azimuth_deg,dip_deg,length_m` CSV in the Import expander; case-insensitive headers; missing az/dip/length fall back to sidebar defaults.
 - **Auto-from-grid collars** — toggle on a grid spec to turn every Nth station into a planned hole with shared defaults — fastest path from "I have a target" to "I have a drill plan"
 - **Combined map view** — show grid + drill collars + drill traces overlaid in the same Folium map; collars as orange pins, traces as projected lines coloured by hole length
 
