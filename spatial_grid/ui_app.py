@@ -25,7 +25,11 @@ from spatial_grid.exporters.drill_export import (
     write_drill_excel,
     write_drill_shapefiles,
 )
-from spatial_grid.exporters.drill_folium import render_combined_map, render_drill_folium
+from spatial_grid.exporters.drill_folium import (
+    render_drill_base_map,
+    render_drill_folium,
+    render_planned_holes_group,
+)
 from spatial_grid.exporters.excel import write_excel
 from spatial_grid.exporters.folium_map import render_folium, write_folium
 from spatial_grid.exporters.gpx import write_gpx
@@ -517,9 +521,15 @@ def _drill_main() -> None:
     hint_parts.append(f"Next click → **{next_name_preview}**")
     st.caption(" · ".join(hint_parts))
 
-    m = render_combined_map(defaults["crs"], grid_for_map, plan)
+    # Split rendering: stable base + dynamic feature group. st_folium reuses
+    # the iframe across reruns when the base hasn't changed, so the viewport
+    # (zoom / pan) doesn't reset every time the user types in the sidebar.
+    base_map = render_drill_base_map(defaults["crs"], grid_for_map)
+    planned_fg = render_planned_holes_group(plan, defaults["crs"])
     map_result = st_folium(
-        m, width=None, height=550,
+        base_map,
+        feature_group_to_add=planned_fg,
+        width=None, height=550,
         returned_objects=["last_clicked"],
         key="drill_combined_map",
     )
