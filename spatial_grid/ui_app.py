@@ -203,6 +203,18 @@ def _grid_main() -> None:
         st.error(f"Invalid configuration: {e}")
         return
 
+    # Stash a lean snapshot for Drill mode's 'Populate from grid' feature.
+    st.session_state.last_grid = {
+        "name": spec.grid_name,
+        "crs": spec.crs,
+        "stations": pd.DataFrame({
+            "station_id": grid.stations["station_id"].tolist(),
+            "easting": grid.stations["easting"].tolist(),
+            "northing": grid.stations["northing"].tolist(),
+        }),
+        "num_stations": grid.total_stations,
+    }
+
     base = spec.grid_name.replace(" ", "_") or "grid"
 
     c1, c2, c3, c4 = st.columns(4)
@@ -381,6 +393,54 @@ def _drill_main() -> None:
         st.session_state.drill_holes_df = _default_holes_df()
     if "drill_editor_v" not in st.session_state:
         st.session_state.drill_editor_v = 0
+
+    with st.expander("Populate from current grid", expanded=False):
+        last_grid = st.session_state.get("last_grid")
+        if not last_grid:
+            st.info(
+                "Generate a grid in **Survey grid** mode first, then return here. "
+                "Each grid station will become one planned hole."
+            )
+        else:
+            st.caption(
+                f"Last grid: **{last_grid['name']}** "
+                f"({last_grid['num_stations']} stations · CRS {last_grid['crs']})."
+            )
+            crs_mismatch = last_grid["crs"] != defaults["crs"]
+            if crs_mismatch:
+                st.warning(
+                    f"Grid CRS ({last_grid['crs']}) differs from drill CRS "
+                    f"({defaults['crs']}). Update the sidebar CRS to match before populating, "
+                    "otherwise collar coordinates will be in the wrong projection."
+                )
+            step = int(st.number_input(
+                "Step (every Nth station)", min_value=1, value=4, step=1,
+                help="1 = every station, 4 = every 4th station, etc.",
+            ))
+            n_holes = -(-last_grid["num_stations"] // step)
+            st.caption(
+                f"→ would create **{n_holes}** holes from "
+                f"{last_grid['num_stations']} stations."
+            )
+            if st.button(
+                "Populate holes table from grid",
+                type="primary",
+                disabled=crs_mismatch,
+                key="populate_from_grid_btn",
+            ):
+                picked = last_grid["stations"].iloc[::step].reset_index(drop=True)
+                new_df = pd.DataFrame({
+                    "name": picked["station_id"].astype(str).tolist(),
+                    "easting": picked["easting"].tolist(),
+                    "northing": picked["northing"].tolist(),
+                    "rl": [None] * len(picked),
+                    "azimuth_deg": [None] * len(picked),
+                    "dip_deg": [None] * len(picked),
+                    "length_m": [None] * len(picked),
+                })
+                st.session_state.drill_holes_df = new_df
+                st.session_state.drill_editor_v += 1
+                st.rerun()
 
     with st.expander("Import holes from CSV", expanded=False):
         st.caption(
