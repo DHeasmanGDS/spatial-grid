@@ -26,9 +26,8 @@ from spatial_grid.exporters.drill_export import (
     write_drill_shapefiles,
 )
 from spatial_grid.exporters.drill_folium import (
-    render_drill_base_map,
+    render_combined_map,
     render_drill_folium,
-    render_planned_holes_group,
 )
 from spatial_grid.exporters.excel import write_excel
 from spatial_grid.exporters.folium_map import render_folium, write_folium
@@ -364,6 +363,34 @@ def _next_hole_name(prefix: str, start: int, pad: int, current_df: pd.DataFrame)
     return f"{prefix}{n:0{pad}d}" if pad > 0 else f"{prefix}{n}"
 
 
+def _drill_map_fingerprint(plan, drill_crs: str, last_grid) -> str:
+    """A short string that changes iff the rendered map should change.
+
+    Used to pick a stable st_folium key when nothing visible changed (so the
+    iframe + viewport are preserved across sidebar interactions) and a fresh
+    key when something did change (forcing st_folium to remount with correct,
+    de-duplicated content).
+    """
+    parts: list[str] = [drill_crs]
+    if last_grid is None:
+        parts.append("nogrid")
+    else:
+        parts.append(
+            f"{last_grid.get('name','')}|{last_grid.get('crs','')}|"
+            f"{last_grid.get('num_stations',0)}"
+        )
+    if plan is None or len(plan.collars) == 0:
+        parts.append("noplan")
+    else:
+        for _, r in plan.collars.iterrows():
+            parts.append(
+                f"{r['hole_name']}/"
+                f"{r['collar_e']:.2f}/{r['collar_n']:.2f}/{r['collar_rl']:.2f}/"
+                f"{r['toe_e']:.2f}/{r['toe_n']:.2f}/{r['toe_rl']:.2f}"
+            )
+    return "|".join(parts)
+
+
 def _add_hole_from_click(click_latlng: dict, defaults: dict) -> tuple[pd.DataFrame, str | None]:
     """Convert a map click (lat/lng) into a new hole row.
 
@@ -521,17 +548,22 @@ def _drill_main() -> None:
     hint_parts.append(f"Next click → **{next_name_preview}**")
     st.caption(" · ".join(hint_parts))
 
-    # Split rendering: stable base + dynamic feature group. st_folium reuses
-    # the iframe across reruns when the base hasn't changed, so the viewport
-    # (zoom / pan) doesn't reset every time the user types in the sidebar.
-    base_map = render_drill_base_map(defaults["crs"], grid_for_map)
-    planned_fg = render_planned_holes_group(plan, defaults["crs"])
+    # Stability strategy: keep a single map key when nothing visible has
+    # changed (st_folium reuses the iframe → viewport preserved on sidebar
+    # typing). Bump the key whenever the plan / grid / CRS actually change
+    # so the iframe remounts with correct, de-duplicated content. The
+    # alternative (feature_group_to_add) doesn't remove stale layers when a
+    # hole is deleted, so the map went out of sync with the table.
+    map_fp = _drill_map_fingerprint(plan, defaults["crs"], last_grid)
+    if st.session_state.get("drill_map_fp") != map_fp:
+        st.session_state.drill_map_fp = map_fp
+        st.session_state.drill_map_v = st.session_state.get("drill_map_v", 0) + 1
+
+    m = render_combined_map(defaults["crs"], grid_for_map, plan)
     map_result = st_folium(
-        base_map,
-        feature_group_to_add=planned_fg,
-        width=None, height=550,
+        m, width=None, height=550,
         returned_objects=["last_clicked"],
-        key="drill_combined_map",
+        key=f"drill_combined_map_v{st.session_state.drill_map_v}",
     )
 
     if map_result and map_result.get("last_clicked"):
