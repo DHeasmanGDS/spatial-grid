@@ -27,10 +27,12 @@ Make this the tool exploration teams actually use to plan a program, not just la
 - **Combined map view** — show grid + drill collars + drill traces overlaid in the same Folium map; collars as orange pins, traces as projected lines coloured by hole length
 
 ### Drill — analytics + visualisation
-- **3D Plotly preview** — true 3D drill traces with terrain shading; rotates / zooms in the browser. The 2D Folium projection misses dip; this fixes that
+- ✅ **3D Plotly preview** — drill mode has a "3D preview" tab with rotateable/zoomable in-browser 3D traces, vertical-exaggeration slider, and a "3D preview (.html)" download button so plans can be shared as a standalone interactive file.
+- ✅ **Drill overlay on the grid map** — Survey grid mode shows planned drill collars + surface projections from the most recent drill plan when the CRS matches, closing the loop between the two modes.
 - **Section views** — given a strike orientation, generate cross-section "strip maps" with holes projected onto the section plane. Standard exploration deliverable
 - **Hole proximity / collision warning** — flag pairs of planned holes whose traces come within a configurable threshold (default 5 m) — catches errors before the rig moves
 - **Cost breakdown by category** — phase / depth class / hole type tables in the Summary sheet, not just a single total
+- **Terrain shading on 3D** — drape a DEM surface beneath the traces for context (currently the 3D view shows holes only)
 
 ### Drill — integrations
 - **Existing-collar import + diff** — read previously-drilled collars from CSV, overlay them, and (optionally) generate an infill program around them

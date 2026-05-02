@@ -25,6 +25,7 @@ from spatial_grid.exporters.drill_export import (
     write_drill_excel,
     write_drill_shapefiles,
 )
+from spatial_grid.exporters.drill_3d import render_drill_3d
 from spatial_grid.exporters.drill_folium import (
     render_drill_base_map,
     render_drill_folium,
@@ -230,8 +231,16 @@ def _grid_main() -> None:
     map_col, dl_col = st.columns([3, 1])
     with map_col:
         st.subheader("Map preview")
-        m = render_folium(grid)
-        st_folium(m, width=None, height=600, returned_objects=[])
+        # Overlay any planned drill holes that share this grid's CRS — closes
+        # the loop so users can see existing drill plans while reconfiguring
+        # the grid.
+        drill_plan_for_overlay = st.session_state.get("last_drill_plan")
+        if (drill_plan_for_overlay is not None
+                and drill_plan_for_overlay.spec.crs != spec.crs):
+            drill_plan_for_overlay = None
+        m = render_folium(grid, drill_plan=drill_plan_for_overlay)
+        st_folium(m, width=None, height=600, returned_objects=[],
+                  key="grid_map")
 
     with dl_col:
         st.subheader("Downloads")
@@ -470,6 +479,11 @@ def _make_drill_csv_bytes(plan) -> bytes:
         return p.read_bytes()
 
 
+def _make_drill_3d_html_bytes(plan, vertical_exaggeration: float = 1.0) -> bytes:
+    fig = render_drill_3d(plan, vertical_exaggeration=vertical_exaggeration)
+    return fig.to_html(include_plotlyjs="cdn", full_html=True).encode("utf-8")
+
+
 def _drill_main() -> None:
     """Drill-program mode: edit holes inline + import CSV + preview + download."""
     defaults = _drill_sidebar_inputs()
@@ -496,6 +510,10 @@ def _drill_main() -> None:
     except ValueError as e:
         build_error = str(e)
 
+    # Persist plan in session_state so Survey grid mode can overlay it on
+    # its own map. Cleared when there's no valid plan.
+    st.session_state.last_drill_plan = plan
+
     # ---- Top: combined clickable map ----
     last_grid = st.session_state.get("last_grid")
     grid_for_map = (
@@ -521,18 +539,41 @@ def _drill_main() -> None:
     hint_parts.append(f"Next click → **{next_name_preview}**")
     st.caption(" · ".join(hint_parts))
 
-    # Split rendering: stable base + dynamic feature group. st_folium reuses
-    # the iframe across reruns when the base hasn't changed, so the viewport
-    # (zoom / pan) doesn't reset every time the user types in the sidebar.
-    base_map = render_drill_base_map(defaults["crs"], grid_for_map)
-    planned_fg = render_planned_holes_group(plan, defaults["crs"])
-    map_result = st_folium(
-        base_map,
-        feature_group_to_add=planned_fg,
-        width=None, height=550,
-        returned_objects=["last_clicked"],
-        key="drill_combined_map",
-    )
+    # Two-tab view: the 2D click-to-add map (primary input) and the 3D
+    # rotateable preview (visual review — Folium loses dip on the surface
+    # projection, this fixes that).
+    map_tab, threed_tab = st.tabs(["2D map (click to add)", "3D preview"])
+
+    with map_tab:
+        # Split rendering: stable base + dynamic feature group. st_folium
+        # reuses the iframe across reruns when the base hasn't changed, so
+        # the viewport (zoom / pan) doesn't reset every time the user types
+        # in the sidebar.
+        base_map = render_drill_base_map(defaults["crs"], grid_for_map)
+        planned_fg = render_planned_holes_group(plan, defaults["crs"])
+        map_result = st_folium(
+            base_map,
+            feature_group_to_add=planned_fg,
+            width=None, height=550,
+            returned_objects=["last_clicked"],
+            key="drill_combined_map",
+        )
+
+    with threed_tab:
+        if plan is None or plan.hole_count == 0:
+            st.info("Add at least one hole to see the 3D preview.")
+        else:
+            ve = st.slider(
+                "Vertical exaggeration", min_value=1.0, max_value=10.0,
+                value=1.0, step=0.5,
+                help="Multiply the elevation axis. Useful when collar/toe RL "
+                     "differences are small compared to the horizontal extent.",
+            )
+            fig = render_drill_3d(plan, vertical_exaggeration=ve)
+            st.plotly_chart(
+                fig, use_container_width=True, theme=None,
+                config={"displayModeBar": True, "displaylogo": False},
+            )
 
     if map_result and map_result.get("last_clicked"):
         click = map_result["last_clicked"]
@@ -618,6 +659,11 @@ def _drill_main() -> None:
             st.download_button(
                 "Surveys CSV", _make_drill_csv_bytes(plan),
                 file_name=f"{base}_surveys.csv", mime="text/csv",
+                type="primary", use_container_width=True,
+            )
+            st.download_button(
+                "3D preview (.html)", _make_drill_3d_html_bytes(plan),
+                file_name=f"{base}_3d.html", mime="text/html",
                 type="primary", use_container_width=True,
             )
         else:

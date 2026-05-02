@@ -1,4 +1,5 @@
 """Output format exporters."""
+from .drill_3d import render_drill_3d, write_drill_3d_html
 from .drill_export import write_drill_csv, write_drill_excel, write_drill_shapefiles
 from .drill_folium import render_drill_folium, write_drill_folium
 from .excel import write_excel
@@ -21,4 +22,6 @@ __all__ = [
     "write_drill_csv",
     "render_drill_folium",
     "write_drill_folium",
+    "render_drill_3d",
+    "write_drill_3d_html",
 ]
