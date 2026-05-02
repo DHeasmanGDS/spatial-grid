@@ -54,11 +54,41 @@ def _sidebar_inputs() -> GridSpec:
     anchor = st.sidebar.radio("Anchor", VALID_ANCHORS, index=0, horizontal=True)
 
     st.sidebar.subheader("Geometry")
-    azimuth = st.sidebar.slider("Azimuth (°)", min_value=0, max_value=359, value=45)
+    azimuth = st.sidebar.number_input(
+        "Azimuth (°)", min_value=0.0, max_value=360.0, value=45.0, step=1.0,
+        help="Direction the survey lines run, degrees clockwise from north.",
+    )
     line_spacing = st.sidebar.number_input("Line spacing (m)", value=100.0, min_value=1.0)
     station_spacing = st.sidebar.number_input("Station spacing (m)", value=25.0, min_value=1.0)
-    num_lines = st.sidebar.number_input("Number of lines", value=21, min_value=1, step=1)
-    num_stations = st.sidebar.number_input("Stations per line", value=41, min_value=2, step=1)
+
+    size_mode = st.sidebar.radio(
+        "Specify grid size by", ["Counts", "Extents (m)"], horizontal=True,
+        help="Counts = number of lines / stations. Extents = grid width and line length in metres; counts auto-derived from spacing.",
+    )
+    if size_mode == "Counts":
+        num_lines = int(st.sidebar.number_input("Number of lines", value=21, min_value=1, step=1))
+        num_stations = int(st.sidebar.number_input("Stations per line", value=41, min_value=2, step=1))
+        grid_width_m = None
+        line_length_m = None
+        st.sidebar.caption(
+            f"→ grid is {(num_lines - 1) * line_spacing:,.0f} m wide × "
+            f"{(num_stations - 1) * station_spacing:,.0f} m long"
+        )
+    else:
+        grid_width_m = st.sidebar.number_input(
+            "Grid width (m)", value=2000.0, min_value=1.0, step=100.0,
+            help="Total spread of lines, perpendicular to azimuth.",
+        )
+        line_length_m = st.sidebar.number_input(
+            "Line length (m)", value=1000.0, min_value=1.0, step=100.0,
+        )
+        num_lines = None
+        num_stations = None
+        derived_lines = int(round(grid_width_m / line_spacing)) + 1
+        derived_stations = int(round(line_length_m / station_spacing)) + 1
+        st.sidebar.caption(
+            f"→ {derived_lines} lines × {derived_stations} stations"
+        )
 
     st.sidebar.subheader("Naming")
     line_naming = st.sidebar.selectbox("Line naming", NAMING_SCHEMES, index=0)
@@ -70,8 +100,10 @@ def _sidebar_inputs() -> GridSpec:
         azimuth_deg=float(azimuth),
         line_spacing=float(line_spacing),
         station_spacing=float(station_spacing),
-        num_lines=int(num_lines),
-        num_stations=int(num_stations),
+        num_lines=num_lines,
+        num_stations=num_stations,
+        grid_width_m=grid_width_m,
+        line_length_m=line_length_m,
         crs=crs,
         grid_name=grid_name,
         anchor=anchor,

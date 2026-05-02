@@ -108,6 +108,53 @@ def test_anchor_nw_extends_se():
     assert grid.stations.northing.min() == pytest.approx(-200)
 
 
+def test_grid_sized_by_extent():
+    """Providing grid_width_m / line_length_m derives counts from spacing."""
+    grid = generate_grid(GridSpec(
+        centre_easting=0, centre_northing=0, azimuth_deg=0,
+        line_spacing=100, station_spacing=25,
+        grid_width_m=2000, line_length_m=1000,
+        crs="EPSG:32617",
+    ))
+    # 2000m / 100m + 1 = 21 lines, 1000m / 25m + 1 = 41 stations
+    assert len(grid.lines) == 21
+    assert len(grid.stations) == 21 * 41
+
+
+def test_extent_and_count_both_rejected():
+    with pytest.raises(ValueError, match="not both"):
+        GridSpec(
+            centre_easting=0, centre_northing=0, azimuth_deg=0,
+            line_spacing=100, station_spacing=25,
+            num_lines=21, grid_width_m=2000,  # both
+            num_stations=41,
+            crs="EPSG:32617",
+        )
+
+
+def test_neither_extent_nor_count_rejected():
+    with pytest.raises(ValueError, match="must provide"):
+        GridSpec(
+            centre_easting=0, centre_northing=0, azimuth_deg=0,
+            line_spacing=100, station_spacing=25,
+            num_stations=41,  # missing line count/extent
+            crs="EPSG:32617",
+        )
+
+
+def test_extent_mixed_with_count():
+    """User can specify counts on one axis and extent on the other."""
+    grid = generate_grid(GridSpec(
+        centre_easting=0, centre_northing=0, azimuth_deg=0,
+        line_spacing=100, station_spacing=25,
+        num_lines=11, line_length_m=500,
+        crs="EPSG:32617",
+    ))
+    # 500/25 + 1 = 21 stations, 11 lines as given
+    assert len(grid.lines) == 11
+    assert len(grid.stations) == 11 * 21
+
+
 def test_anchor_corner_uses_unsigned_chainage():
     """Corner-anchored grids drop the +/- prefix on chainage labels."""
     grid = generate_grid(_spec(num_lines=3, num_stations=3,

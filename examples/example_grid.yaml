@@ -14,8 +14,12 @@ azimuth_deg: 45          # NE-SW lines (degrees from north, clockwise)
 line_spacing: 100        # metres between lines (perpendicular to lines)
 station_spacing: 25      # metres between stations along a line
 
+# Grid size — provide EITHER counts OR extents (not both, on each axis):
 num_lines: 21            # 21 lines × 100m = 2000m grid width
 num_stations: 41         # 41 stations × 25m = 1000m line length
+# Or, equivalently:
+# grid_width_m: 2000     # auto-derives num_lines from line_spacing
+# line_length_m: 1000    # auto-derives num_stations from station_spacing
 
 line_naming: chainage    # sequential | chainage | signed
 station_naming: chainage

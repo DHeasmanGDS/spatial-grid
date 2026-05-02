@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Optional
 
 import geopandas as gpd
 import numpy as np
@@ -22,9 +23,13 @@ class GridSpec:
     azimuth_deg: float
     line_spacing: float
     station_spacing: float
-    num_lines: int
-    num_stations: int
     crs: str
+    # Size: provide EITHER counts (num_lines / num_stations) OR extents
+    # (grid_width_m / line_length_m). One of each pair is required.
+    num_lines: Optional[int] = None
+    num_stations: Optional[int] = None
+    grid_width_m: Optional[float] = None
+    line_length_m: Optional[float] = None
     grid_name: str = "GRID"
     line_naming: str = "chainage"
     station_naming: str = "chainage"
@@ -38,6 +43,13 @@ class GridSpec:
     """
 
     def __post_init__(self):
+        # Resolve count vs extent — exactly one of each pair must be set.
+        self.num_lines = _resolve_count(
+            "lines", self.num_lines, self.grid_width_m, self.line_spacing,
+        )
+        self.num_stations = _resolve_count(
+            "stations", self.num_stations, self.line_length_m, self.station_spacing,
+        )
         if self.num_lines < 1:
             raise ValueError("num_lines must be >= 1")
         if self.num_stations < 2:
@@ -47,6 +59,29 @@ class GridSpec:
         if self.anchor not in VALID_ANCHORS:
             raise ValueError(f"anchor must be one of {VALID_ANCHORS}; got {self.anchor!r}")
         CRS.from_user_input(self.crs)
+
+
+def _resolve_count(label: str, count: Optional[int], extent: Optional[float],
+                   spacing: float) -> int:
+    """Validate and coerce count/extent into a positive int count.
+
+    A grid with N lines/stations spans (N-1)*spacing metres. So extent->count
+    is `round(extent / spacing) + 1`.
+    """
+    if count is not None and extent is not None:
+        raise ValueError(
+            f"provide either count ({label}) or extent, not both"
+        )
+    if count is None and extent is None:
+        raise ValueError(
+            f"must provide num_{label} or "
+            f"{'grid_width_m' if label == 'lines' else 'line_length_m'}"
+        )
+    if extent is not None:
+        if extent <= 0:
+            raise ValueError(f"extent for {label} must be positive (got {extent})")
+        return int(round(extent / spacing)) + 1
+    return int(count)
 
 
 @dataclass

@@ -10,21 +10,41 @@ Living list of planned and proposed work. Items are grouped by release; within a
 - Exporters: Excel, shapefile, KML, GPX, PNG preview, interactive Folium HTML
 - YAML config + CLI
 - Streamlit browser UI
+- Grid sized by **counts OR extents** (`num_lines` / `num_stations`, or `grid_width_m` / `line_length_m` — counts auto-derived from spacing)
+- Azimuth as numeric input (precise) rather than slider
+- Public deploy at tools.smcg-services.com behind Cloudflare Tunnel
 
 ---
 
-## v0.2 — drill-hole planning + smarter placement
+## v0.2 — drill-hole planning is the headline
 
-The first release where this becomes useful for actual drill programs, not just survey grids.
+Make this the tool exploration teams actually use to plan a program, not just lay out stations. Items in priority order:
 
-- ✅ **Drill-hole planning** — explicit collar list with azimuth/dip/length; outputs collars (2D), traces (3D LineStrings), downhole surveys at user-set interval; Excel + shapefile + CSV. New CLI: `spatial-grid-drill`.
-- ✅ **Drill metres + cost estimate** — `cost_per_metre` in the config produces a total program cost on the Summary sheet.
-- **Auto section lines** — given a strike orientation (or interpreted from a target polygon), generate cross-section lines through priority targets, perpendicular to strike, with configurable spacing and length
+### Drill — UI + ergonomics (next session)
+- **Drill UI integration** — second tab in the Streamlit app: paste / type the hole list, set defaults (azimuth, dip, length, survey interval, $/m), live preview map showing collars + projected traces, download buttons for Excel / shapefiles / CSV
+- **Bulk CSV hole import** — accept `holes.csv` (one row per hole) in addition to YAML; the natural format when a geo has 50+ planned holes
+- **Auto-from-grid collars** — toggle on a grid spec to turn every Nth station into a planned hole with shared defaults — fastest path from "I have a target" to "I have a drill plan"
+- **Combined map view** — show grid + drill collars + drill traces overlaid in the same Folium map; collars as orange pins, traces as projected lines coloured by hole length
+
+### Drill — analytics + visualisation
+- **3D Plotly preview** — true 3D drill traces with terrain shading; rotates / zooms in the browser. The 2D Folium projection misses dip; this fixes that
+- **Section views** — given a strike orientation, generate cross-section "strip maps" with holes projected onto the section plane. Standard exploration deliverable
+- **Hole proximity / collision warning** — flag pairs of planned holes whose traces come within a configurable threshold (default 5 m) — catches errors before the rig moves
+- **Cost breakdown by category** — phase / depth class / hole type tables in the Summary sheet, not just a single total
+
+### Drill — integrations
+- **Existing-collar import + diff** — read previously-drilled collars from CSV, overlay them, and (optionally) generate an infill program around them
+- **Section line generator** — given a strike orientation (or interpreted from a target polygon), generate cross-section lines through priority targets, perpendicular to strike
+
+### Grid quality-of-life (smaller items)
 - **Tenement / permit clipping** — read a polygon (shp / GeoJSON / KML), clip the grid to inside; report the count of stations dropped
 - **Exclusion-zone buffers** — buffer features (creeks, roads, heritage) and drop stations within the buffer; report which lines are partially affected
-- **Auto UTM zone** — when input is lat/lon, auto-pick the WGS84 UTM EPSG (already wired in the UI; promote to CLI / config)
-- **UI integration** — drill planning section in the Streamlit app: paste collar CSV or use grid stations as collars, live 3D preview, downloads
-- **Auto-from-grid** — turn every Nth grid station into a planned hole with shared azimuth/dip/length
+- **Auto UTM zone in CLI / config** — already in the UI; promote to YAML config via a `centre_lat` / `centre_lon` alternative to easting/northing
+- **PDF report generation** — one-click drill plan report with map, hole table, summary metrics
+
+### Already shipped (v0.2 alpha)
+- ✅ Drill-hole planning core — explicit collar list with azimuth/dip/length; outputs collars (2D), traces (3D LineStrings), downhole surveys at user-set interval; Excel + shapefile + CSV. New CLI: `spatial-grid-drill`.
+- ✅ Drill metres + cost estimate — `cost_per_metre` in the config produces a total program cost on the Summary sheet.
 
 ## v0.3 — terrain awareness + alternative survey geometries
 
