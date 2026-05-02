@@ -227,12 +227,12 @@ def render_combined_map(
             lon, lat = transformer.transform(s["easting"], s["northing"])
             folium.CircleMarker(
                 location=[lat, lon],
-                radius=6,
-                color="#1e3a8a",
+                radius=2.5,
+                color="#475569",
                 weight=1,
                 fill=True,
-                fill_color="#bfdbfe",
-                fill_opacity=0.85,
+                fill_color="#94a3b8",
+                fill_opacity=0.7,
                 tooltip=str(s["station_id"]),
             ).add_to(gl)
         gl.add_to(m)
@@ -251,7 +251,7 @@ def render_combined_map(
             ).add_to(proj_layer)
             folium.CircleMarker(
                 location=[coll_lat, coll_lon],
-                radius=8,
+                radius=5,
                 color="#002244",
                 weight=2,
                 fill=True,
